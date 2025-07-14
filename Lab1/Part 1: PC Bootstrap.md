@@ -177,3 +177,186 @@ PC 开始执行时 CS = 0xf000(应该是，但是我这里为0x3630)，IP = 0xff
 - 跳转的目的是去到 BIOS 中更早的位置执行初始化代码
 
 因此无需在意  
+
+---
+
+**对于练习二：**
+
+追踪得到以下内容  
+```
+[f000:fff0]    0xffff0: ljmp   $0x3630,$0xf000e05b
+0x0000fff0 in ?? ()
++ symbol-file obj/kern/kernel
+warning: A handler for the OS ABI "GNU/Linux" is not built into this configuration
+of GDB.  Attempting to continue with the default i8086 settings.
+
+(gdb) x/5i 0xffff0
+   0xffff0:     ljmp   $0x3630,$0xf000e05b
+   0xffff7:     das    
+   0xffff8:     xor    (%ebx),%dh
+   0xffffa:     das    
+   0xffffb:     cmp    %edi,(%ecx)
+(gdb) x/10bx 0xffff0
+0xffff0:        0xea    0x5b    0xe0    0x00    0xf0    0x30    0x36    0x2f
+0xffff8:        0x32    0x33
+(gdb) si
+[f000:e05b]    0xfe05b: cmpw   $0xffc8,%cs:(%esi)
+0x0000e05b in ?? ()
+(gdb) si
+[f000:e062]    0xfe062: jne    0xd241d0b0
+0x0000e062 in ?? ()
+(gdb) si
+[f000:e066]    0xfe066: xor    %edx,%edx
+0x0000e066 in ?? ()
+(gdb) si
+[f000:e068]    0xfe068: mov    %edx,%ss
+0x0000e068 in ?? ()
+(gdb) si
+[f000:e06a]    0xfe06a: mov    $0x7000,%sp
+0x0000e06a in ?? ()
+(gdb) si
+[f000:e070]    0xfe070: mov    $0xfc1c,%dx
+0x0000e070 in ?? ()
+(gdb) si
+[f000:e076]    0xfe076: jmp    0x5576cf2d
+0x0000e076 in ?? ()
+(gdb) si
+[f000:cf2b]    0xfcf2b: cli    
+0x0000cf2b in ?? ()
+(gdb) si
+[f000:cf2c]    0xfcf2c: cld    
+0x0000cf2c in ?? ()
+(gdb) si
+[f000:cf2d]    0xfcf2d: mov    %ax,%cx
+0x0000cf2d in ?? ()
+(gdb) si
+[f000:cf30]    0xfcf30: mov    $0x8f,%ax
+0x0000cf30 in ?? ()
+(gdb) si
+[f000:cf36]    0xfcf36: out    %al,$0x70
+^[[A0x0000cf36 in ?? ()
+(gdb) si
+[f000:cf38]    0xfcf38: in     $0x71,%al
+0x0000cf38 in ?? ()
+(gdb) si
+[f000:cf3a]    0xfcf3a: in     $0x92,%al
+0x0000cf3a in ?? ()
+(gdb) si
+[f000:cf3c]    0xfcf3c: or     $0x2,%al
+0x0000cf3c in ?? ()
+(gdb) si
+[f000:cf3e]    0xfcf3e: out    %al,$0x92
+0x0000cf3e in ?? ()
+(gdb) si
+[f000:cf40]    0xfcf40: mov    %cx,%ax
+0x0000cf40 in ?? ()
+(gdb) si
+[f000:cf43]    0xfcf43: lidtl  %cs:(%esi)
+0x0000cf43 in ?? ()
+(gdb) si
+[f000:cf49]    0xfcf49: lgdtl  %cs:(%esi)
+0x0000cf49 in ?? ()
+(gdb) si
+[f000:cf4f]    0xfcf4f: mov    %cr0,%ecx
+0x0000cf4f in ?? ()
+(gdb) si
+[f000:cf52]    0xfcf52: and    $0xffff,%cx
+0x0000cf52 in ?? ()
+(gdb) si
+[f000:cf59]    0xfcf59: or     $0x1,%cx
+0x0000cf59 in ?? ()
+(gdb) si
+[f000:cf5d]    0xfcf5d: mov    %ecx,%cr0
+0x0000cf5d in ?? ()
+(gdb) si
+[f000:cf60]    0xfcf60: ljmpw  $0xf,$0xcf68
+0x0000cf60 in ?? ()
+(gdb) si
+The target architecture is set to "i386".
+=> 0xfcf68:     mov    $0x10,%ecx
+0x000fcf68 in ?? ()
+(gdb) si
+=> 0xfcf6d:     mov    %ecx,%ds
+0x000fcf6d in ?? ()
+(gdb) 
+
+```
+
+让我们逐个分析  
+
+1. 初始跳转和内存检查 (0xffff0 - 0xfe066)
+```
+0xffff0: ljmp   $0x3630,$0xf000e05b    # 跳转到BIOS主程序
+0xfe05b: cmpw   $0xffc8,%cs:(%esi)     # 内存/配置检查
+0xfe062: jne    0xd241d0b0              # 条件跳转
+0xfe066: xor    %edx,%edx               # 清零EDX寄存器
+```
+
+2. 栈初始化 (0xfe068 - 0xfe06a)
+```
+0xfe068: mov    %edx,%ss               # 设置栈段寄存器SS = 0
+0xfe06a: mov    $0x7000,%sp            # 设置栈指针SP = 0x7000
+```
+**作用：** 建立栈空间，栈位于物理地址 0x7000  
+
+3.  硬件初始化准备 (0xfe070 - 0xfcf2c)
+```
+0xfe070: mov    $0xfc1c,%dx            # 设置DX寄存器
+0xfe076: jmp    0x5576cf2d             # 跳转到硬件初始化代码
+0xfcf2b: cli                           # 关闭中断
+0xfcf2c: cld                           # 清除方向标志
+```
+
+4. 硬件端口操作 (0xfcf36 - 0xfcf3e)
+```
+0xfcf36: out    %al,$0x70              # 写CMOS/RTC端口
+0xfcf38: in     $0x71,%al              # 读CMOS数据
+0xfcf3a: in     $0x92,%al              # 读系统控制端口A
+0xfcf3c: or     $0x2,%al               # 设置A20门使能位
+0xfcf3e: out    %al,$0x92              # 写回端口92，启用A20线
+```
+
+5. 保护模式准备 (0xfcf43 - 0xfcf5d)
+```
+0xfcf43: lidtl  %cs:(%esi)             # 加载中断描述符表
+0xfcf49: lgdtl  %cs:(%esi)             # 加载全局描述符表
+0xfcf4f: mov    %cr0,%ecx              # 读取CR0控制寄存器
+0xfcf52: and    $0xffff,%cx            # 清除高16位
+0xfcf59: or     $0x1,%cx               # 设置PE位(保护模式使能)
+0xfcf5d: mov    %ecx,%cr0              # 写回CR0，切换到保护模式
+```
+
+6. 进入保护模式 (0xfcf60 - 0xfcf6d)
+```
+0xfcf60: ljmpw  $0xf,$0xcf68           # 长跳转，加载新的代码段
+=> 0xfcf68: mov    $0x10,%ecx          # 设置数据段选择子
+=> 0xfcf6d: mov    %ecx,%ds            # 加载数据段寄存器
+```
+暂时只分析了这些  
+
+**BIOS 主要功能总结**
+BIOS 在做什么：
+  1. 硬件初始化
+     - 设置栈空间
+     - 初始化CPU状态
+     - 配置系统硬件
+     
+  2. 内存管理准备
+     - 启用A20地址线（允许访问1MB以上内存）
+     - 设置内存映射
+    
+  3. 保护模式转换
+     - 设置GDT（全局描述符表）
+     - 设置IDT（中断描述符表）
+     - 从16位实模式切换到32位保护模式
+    
+  4. 系统环境建立
+     - 关闭中断
+     - 设置段寄存器
+     - 为后续操作系统加载做准备
+
+这就是典型的PC BIOS启动序列：硬件检测 → 内存初始化 → 保护模式切换 → 准备加载引导程序。  
+
+当 BIOS 运行时，它设置一个中断描述符表并初始化各种设备，例如 VGA 显示器。这就是你在 QEMU 窗口看到的 "Starting SeaBIOS" 消息来自的地方。
+
+在 BIOS 初始化它所知道的 PCI bus 和所有重要的设备之后，它搜索一个可启动设备，比如软盘、硬盘或者 CD-ROM。最终，当它找到一个可启动的磁盘时，BIOS 读取磁盘里的 boot loader，然后把控制权转交给它。
