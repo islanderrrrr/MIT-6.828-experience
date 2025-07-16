@@ -332,5 +332,26 @@ bad:
 
 为了查看内存里的指令（除了即将执行的下一个，GDB 会自动打印），你可以使用 x/i 指令。这个命令的语法是 x/Ni ADDR，N 是连续反汇编指令的数目，ADDR 是开始反汇编的内存地址。
 
+- 在什么时候处理器开始执行 32 位代码？是什么导致了 16 位到 32 位到模式的转变？
 
+处理器在执行``.ljmp $PROT_MODE_CSEG, $protcseg`` 指令时开始执行 32 位代码。这条指令会将处理器从 16 位实模式切换到 32 位保护模式。  
+具体流程是：首先通过设置 CR0 的 PE 位（``movl %cr0, %eax; orl $CR0_PE_ON, %eax; movl %eax, %cr0``）打开保护模式，然后通过远跳转（``ljmp``）进入 32 位代码段，从而切换到 32 位模式。
 
+- boot loader 最后执行的指令是什么，kernel 刚加载时执行的第一个指令是什么？
+
+boot loader最后执行的指令是``((void (*)(void)) (ELFHDR->e_entry))()``，是对 ELF 格式的内核主入口点进行跳转，也就是kernel内核，kernel刚加载时，第一个指令是``movw	$0x1234,0x472			# warm boot``  
+
+- kernel 的第一个指令在哪儿？
+
+0x0010000c的位置，实验全程结果为 
+```
+Breakpoint 2, 0x00007d71 in ?? ()
+(gdb) x/i
+   0x7d77:      mov    $0x8a00,%edx
+(gdb) ni
+=> 0x10000c:    movw   $0x1234,0x472
+```
+
+- boot loader 如何决定要读取多少扇区才能加载整个内核？它是在哪里找到这个信息的？
+
+boot loader 首先读取 ELF 文件头（``readseg((uint32_t)ELFHDR, SECTSIZE*8, 0);``），然后通过解析 ELF 文件头中的 program header（``e_phoff``, ``e_phnum``），获取每个段的物理地址、内存大小和文件偏移（``p_pa``, ``p_memsz``, ``p_offset``），再根据这些信息循环调用 ``readseg`` 读取各个段的数据。每个段需要读取多少字节由 ``p_memsz`` 决定，分多次读取。所有这些信息都来自 ELF 文件头和 program header。
