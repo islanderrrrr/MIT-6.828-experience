@@ -202,3 +202,48 @@ struct PageInfo {
 - 从后往前构建链表（后加入的在链表头部）
 - 这不影响功能，只是链表的顺序
 
+# page_alloc() 页分配 
+```
+struct PageInfo *
+page_alloc(int alloc_flags)
+{
+    struct PageInfo *temp;
+    if (page_free_list == NULL) {
+        return NULL;
+    }
+    temp = page_free_list;
+    page_free_list = temp->pp_link;
+    temp->pp_link = NULL;
+    if (alloc_flags & ALLOC_ZERO)
+        memset(page2kva(temp), 0, PGSIZE);
+    return temp;
+}
+```
+**功能**
+- 从page_free_list链表中取出第一个空闲页进行分配。
+- 若 ALLOC_ZERO 标志为真，将页面清零。
+
+**逻辑解析**
+- 如果链表为空，直接返回 NULL；
+- 从链表中移除选中的空闲页，并返回 PageInfo *；
+- 若有清零标志，使用 page2kva 转换页的虚拟地址并执行清零。
+
+# 回收页面 page_free()
+```
+void
+page_free(struct PageInfo *pp)
+{
+    if (pp->pp_ref != 0 || pp->pp_link != NULL)
+        panic("can't properly free page\n");
+    pp->pp_link = page_free_list;
+    page_free_list = pp;
+}
+```
+**功能**
+- 将指定页面加入空闲链表 page_free_list，回收内存。
+- 如果页面仍被引用或者已经在链表中，触发 panic。
+
+**解析**
+- 引用计数 pp_ref：必须为 0 表明页面无任何使用；
+- 链表指针 pp_link：确保页面未被回收到链表中；
+- 插入到链表头部。
